@@ -1,0 +1,4 @@
+click
+SQLAlchemy
+psycopg2-binary
+alembic
