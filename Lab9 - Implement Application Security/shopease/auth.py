@@ -6,7 +6,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 import jwt
-from passlib.context import CryptContext
+import bcrypt
+import hashlib
+import base64
 
 from .db import get_session
 from .models import Customer
@@ -16,9 +18,6 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# Use bcrypt_sha256 to avoid the 72-byte input limitation of raw bcrypt.
-# This first hashes the password with SHA-256 and then uses bcrypt safely.
-pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/adsweb/api/v1/token")
 
 
@@ -33,11 +32,26 @@ class TokenData(BaseModel):
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    if not hashed_password:
+        return False
+    try:
+        # pre-hash the provided password with SHA-256, then base64-encode
+        pw_bytes = plain_password.encode("utf-8")
+        pre = hashlib.sha256(pw_bytes).digest()
+        encoded = base64.b64encode(pre)
+        # hashed_password stored as utf-8 string
+        return bcrypt.checkpw(encoded, hashed_password.encode("utf-8"))
+    except Exception:
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    # pre-hash the password with SHA-256 and base64-encode the digest
+    pw_bytes = password.encode("utf-8")
+    pre = hashlib.sha256(pw_bytes).digest()
+    encoded = base64.b64encode(pre)
+    hashed = bcrypt.hashpw(encoded, bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
